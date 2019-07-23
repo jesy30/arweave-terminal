@@ -19,7 +19,45 @@ export default class App extends React.Component {
   constructor(props) {
     super(props);
 
+    this.state = {
+
+      jwk: null
+
+    }  
+
  
+  }
+
+
+  async sendTxn(print, address, amount) {
+
+    console.log('address: $'+address + '  ****')
+
+
+    let transaction = await arweave.createTransaction({
+      target: address,
+      quantity: arweave.ar.arToWinston(amount.toString())
+    }, this.state.jwk);
+  
+    await arweave.transactions.sign(transaction, this.state.jwk);
+
+    console.log(transaction);
+
+    const response = await arweave.transactions.post(transaction);
+    
+
+    if(response.status == 200)  { 
+      print('Transaction sent.')
+      print('Viewblock URL: https://viewblock.io/arweave/tx/'+ transaction.id)
+      print('Check status using `status '+ transaction.id+ '`')
+
+    }else if (response.status == 500) {
+      print('500 - error')
+    }else if (response.status == 400) {
+      print('400 - invalid transaction')
+    }
+  
+    
   }
 
 
@@ -64,7 +102,7 @@ export default class App extends React.Component {
               
                 height: (args, print, runCommand) => { 
 
-                  axios.get('http://arweave.net/info').then(response => response.data)
+                  axios.get('https://arweave.net/info').then(response => response.data)
                   .then((data) => {
                     console.log(data)
                     print('Arweave network height is: ' + data.height)
@@ -76,16 +114,21 @@ export default class App extends React.Component {
 
                   const txn = args.slice(1).join(' ');
 
-                  axios.get('http://arweave.net/tx/'+ txn).then(response => response.data)
+                  axios.get('https://arweave.net/tx/'+ txn).then(response => response.data)
                   .then((data) => {
                     console.log(data)
                     if(data.id == undefined) {
                       print(data)
                     }
-                    if(Object.keys(data).length) {
+                    else if(Object.keys(data).length) {
                       print('confirmed')
                     }
-
+                  })
+                  .catch(function (error) {
+                    print('Failed')
+                    if (error.response) {
+                      console.log(error.response.status);
+                    }
                   })
 
                   
@@ -112,6 +155,67 @@ export default class App extends React.Component {
                     let ar = arweave.ar.winstonToAr(balance);
                     print('AR Balance: ' + ar)
                   });
+                },
+
+                import: (args, print) => { 
+                  const key =   JSON.parse(args.slice(1).join(' '));
+
+                  arweave.wallets.jwkToAddress(key).then((address) => {
+              
+                    print('Address: '+ address);
+                    print("Successfully Imported.")
+
+                    this.setState({jwk: key});
+
+                    arweave.wallets.getBalance(address).then((balance) => {
+                      let winston = balance;
+                      let ar = arweave.ar.winstonToAr(balance);
+                      print('AR Balance: ' + ar)
+                    });
+  
+                   });
+
+                
+                },
+
+                send: (args, print) => {
+                  const targetAddr = args[1].trim();
+                  const amount =  parseFloat(args.slice(2).join(' '));
+
+                  console.log(args)
+
+                  console.log('addr : '+ targetAddr)
+                  console.log('amount : '+ amount)
+
+
+
+                  if(this.state.jwk == null) {
+                    print('Please  import a wallet first using `import` command ');
+                    return;
+                  }
+
+                  arweave.wallets.jwkToAddress(this.state.jwk).then((address) => {
+              
+
+                    arweave.wallets.getBalance(address).then((balance) => {
+                      let winston = balance;
+                      let ar = parseFloat(arweave.ar.winstonToAr(balance));
+
+                      if(amount >  ar) {
+
+                        print('Not enough balance!')
+                        return;
+
+                      }
+                      this.sendTxn(print, targetAddr, amount);
+
+                    });
+  
+                   });
+
+                  
+
+                  console.log(this.state.jwk)
                 },
 
                 wallet: (args, print) => {
@@ -142,7 +246,9 @@ export default class App extends React.Component {
                 height: 'Check current AR height',
                 status: 'Check transaction status',
                 tags: 'Retrieve tags associated with a transaction',
-                wallet: 'Create a new wallet'
+                wallet: 'Create a new wallet',
+                import:  'Import wallet -  usage :  import {"kty":"RSA","ext":.........',
+                send: 'Send transaction -  usage : send 1seRanklLU_1VTGkEk7P0xAwMJfA7owA1JHW5KyZKlY 0.5 '
               }}
               msg='Hello, welcome to AR Terminal - Use `help` to see all the available commands '
             />
